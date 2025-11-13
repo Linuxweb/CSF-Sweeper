@@ -1,0 +1,11 @@
+If you are going to use this test file, here is a list of all the IP's (/24) that show up 3 or more times for you to verify the results:
+ - 132.254.223 --> 8 times
+ - 142.197.253 --> 6 times
+ - 16.204.122 --> 8 times
+ - 160.11.35 --> 5 times
+ - 167.228.135 --> 7 times
+ - 22.5.122 --> 5 times
+ - 23.110.94 --> 4 times
+ - 252.155.164 --> 6 times
+ - 8.144.157 --> 7 times
+ - 91.46.76 --> 5 times
