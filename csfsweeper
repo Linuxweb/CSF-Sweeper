@@ -1,0 +1,215 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use POSIX qw(strftime);
+use File::Copy;
+use File::Basename;
+use File::Path qw(make_path);
+use Sys::Hostname;
+
+# =============================================================================
+# CSF Sweeper v2.6 - Safe Automation Script for CSF/IP Rotation
+# =============================================================================
+
+# ---------------------- CONFIGURATION SECTION ----------------------
+my $test_mode        = 0;   # 1 = Use test csf.deny file, 0 = Use live CSF
+my $dry_run_mode     = 0;   # 1 = Simulate actions, 0 = Perform changes
+my $BACKUP_RETENTION = 5;   # Number of old backups to keep
+my $OCTET_COUNT      = 3;   # First N octets to group bans
+my $MIN_OCCURRENCES  = 3;   # Minimum repeat count before /24 ban
+my $MAIL_TO          = 'root';
+my $MAIL_FROM = 'csf-sweeper@' . hostname();
+my $BACKUP_DIR       = '/var/backups/csfsweeper';
+my $CSF_DENY_LIVE    = '/etc/csf/csf.deny';
+my $CSF_DENY_TEST    = '/scripts/test/csf.deny.test';
+# -------------------------------------------------------------------
+
+my $timestamp = strftime("%Y%m%dT%H%M%S", localtime);
+my $mode_name  = $dry_run_mode ? "Dry Run" : ($test_mode ? "Test" : "Production");
+my $csf_deny   = $test_mode ? $CSF_DENY_TEST : $CSF_DENY_LIVE;
+
+# Prepare directories
+make_path($BACKUP_DIR) unless -d $BACKUP_DIR;
+
+# =============================================================================
+# Step 1: Backup current CSF deny file
+# =============================================================================
+my $backup_file = "$BACKUP_DIR/csf.deny.bak.$timestamp";
+my $backup_ok   = 1;
+
+if ($dry_run_mode) {
+    $backup_ok = 1;
+} else {
+    eval {
+        copy($csf_deny, $backup_file) or die "Backup failed: $!";
+    };
+    if ($@) {
+        $backup_ok = 0;
+    }
+
+    # Rotate old backups
+    my @backups = sort { (stat($b))[9] <=> (stat($a))[9] } glob("$BACKUP_DIR/csf.deny.bak.*");
+    if (@backups > $BACKUP_RETENTION) {
+        my @to_delete = @backups[$BACKUP_RETENTION .. $#backups];
+        foreach my $file (@to_delete) {
+            unlink $file;
+        }
+    }
+}
+
+# =============================================================================
+# Step 2: Parse and clean deny file
+# =============================================================================
+open my $fh, '<', $csf_deny or die "Cannot open $csf_deny: $!";
+my @lines = <$fh>;
+close $fh;
+
+my @header;
+my @existing_permanent;
+foreach my $line (@lines) {
+    if ($line =~ /^\s*#/) {
+        push @header, $line;
+    } elsif ($line =~ /do not delete/i) {
+        push @existing_permanent, $line;
+    }
+}
+
+# Extract IPs for grouping
+my %groups;
+foreach my $line (@lines) {
+    next if $line =~ /^\s*#/;
+    next if $line =~ /do not delete/i;
+    if ($line =~ /^(\d{1,3}(?:\.\d{1,3}){3})/) {
+        my $ip = $1;
+        my @octets = split /\./, $ip;
+        my $key = join('.', @octets[0 .. $OCTET_COUNT-1]);
+        push @{ $groups{$key} }, $ip;
+    }
+}
+
+# =============================================================================
+# Step 3: Identify new permanent bans
+# =============================================================================
+my @new_bans;
+foreach my $group (keys %groups) {
+    if (scalar(@{ $groups{$group} }) >= $MIN_OCCURRENCES) {
+        push @new_bans, "$group.0/24";
+    }
+}
+
+# =============================================================================
+# Step 4: Rewrite deny file if needed
+# =============================================================================
+my $file_ok = 1;
+if (@new_bans) {
+    if ($dry_run_mode) {
+        $file_ok = 1;
+    } else {
+        eval {
+            open my $out, '>', $csf_deny or die "Cannot write $csf_deny: $!";
+            print $out @header;
+            print $out @existing_permanent;
+            foreach my $ban (@new_bans) {
+                print $out "$ban # Hacker do not delete - " . localtime() . "\n";
+            }
+            close $out;
+        };
+        if ($@) {
+            $file_ok = 0;
+        }
+    }
+} else {
+    # No bans → nothing to rewrite
+    $file_ok = 1;
+}
+
+# =============================================================================
+# Step 5: Restart CSF and LFD if new bans exist
+# =============================================================================
+my $restart_ok = 1;
+
+# Find CSF binary
+my $csf_path = '';
+for my $path (qw(/usr/sbin/csf /sbin/csf /usr/local/sbin/csf)) {
+    if (-x $path) {
+        $csf_path = $path;
+        last;
+    }
+}
+
+if (@new_bans) {
+    if ($dry_run_mode) {
+        $restart_ok = 1;
+    } elsif ($csf_path eq '') {
+        $restart_ok = 0;
+    } else {
+        my $restart_output = `$csf_path -ra 2>&1`;
+        my $exit_code      = $? >> 8;
+        if ($exit_code != 0) {
+            $restart_ok = 0;
+        } else {
+            # Verify CSF + LFD
+            my $csf_status = `systemctl is-active csf 2>/dev/null`; chomp($csf_status);
+            my $lfd_status = `systemctl is-active lfd 2>/dev/null`; chomp($lfd_status);
+            $restart_ok = 0 if $csf_status ne 'active' or $lfd_status ne 'active';
+        }
+    }
+}
+
+# =============================================================================
+# Step 6: Build Email
+# =============================================================================
+my $subject;
+my $body = "CSF Sweeper report - " . localtime() . "\n\n";
+
+# --- Summary Section ---
+$body .= "--- Summary Report ---\n";
+$body .= $backup_ok   ? "✅ Backup created\n"          : "⚠️ Backup failed\n";
+$body .= "✅ Backup rotation OK\n" if $backup_ok;
+$body .= @new_bans
+    ? ($file_ok ? "✅ File rewrite OK\n" : "⚠️ File rewrite FAILED\n")
+    : "✅ File rewrite skipped (no new bans)\n";
+$body .= @new_bans
+    ? ($restart_ok ? "✅ Firewall restarted\n" : "⚠️ Firewall restart FAILED\n")
+    : "✅ Firewall restart skipped (no new bans)\n";
+
+# --- Detailed Section ---
+$body .= "\n--- Detailed Report ---\n";
+$body .= "Mode: $mode_name\n";
+$body .= "Rules Set: $csf_deny\n";
+$body .= "Backup directory: $BACKUP_DIR\n";
+$body .= "OCTET_COUNT = $OCTET_COUNT\nMIN_OCCURRENCES = $MIN_OCCURRENCES\n\n";
+
+$body .= "Backup created: $backup_file\n" if $backup_ok;
+$body .= "Old backups rotated, keeping last $BACKUP_RETENTION.\n" if $backup_ok;
+
+if (@new_bans) {
+    $body .= "\nNew permanent bans added:\n";
+    $body .= join("\n", map { "$_ # Hacker do not delete - " . localtime() } @new_bans) . "\n";
+} else {
+    $body .= "\nNo new bans were required at this run.\n";
+    $body .= "CSF + LFD were not restarted.\n";
+}
+
+# Subject
+if (!$backup_ok or !$file_ok or (!$restart_ok && @new_bans)) {
+    $subject = "[CSF Sweeper] ⚠️ Warning: One or more tasks failed";
+} elsif (@new_bans) {
+    $subject = "[CSF Sweeper] New permanent bans applied";
+} else {
+    $subject = "[CSF Sweeper] No new bans - all systems operational";
+}
+
+# --- Send Email ---
+if ($dry_run_mode) {
+    print "\n--- DRY RUN OUTPUT ---\n$body\n";
+} else {
+    open(my $mail, "|-", "/usr/sbin/sendmail -t") or die "Cannot send mail: $!";
+    print $mail "To: $MAIL_TO\n";
+    print $mail "From: $MAIL_FROM\n";
+    print $mail "Subject: $subject\n\n";
+    print $mail $body;
+    close $mail;
+}
+
+exit 0;
