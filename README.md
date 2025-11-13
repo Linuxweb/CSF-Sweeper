@@ -23,3 +23,7 @@ To add a cron job for this file to be executed, follow these commands:
 - **$BACKUP_DIR**          = Backups storage location
 - **$CSF_DENY_LIVE**       = Directory for your real csf.deny file
 - **$CSF_DENY_TEST**       = Directory for your test csf.deny file
+
+# Using the deny.csf.test file
+- Make sure the **$CSF_DENY_TEST** reflects the directory of the file
+- This file is intended for use with an **$OCTET_COUNT** of 3, and a **$MIN_OCCURRENCES** of 3
