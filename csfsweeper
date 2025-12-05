@@ -93,7 +93,21 @@ foreach my $line (@lines) {
 my @new_bans;
 foreach my $group (keys %groups) {
     if (scalar(@{ $groups{$group} }) >= $MIN_OCCURRENCES) {
-        push @new_bans, "$group.0/24";
+
+        # compute CIDR mask and full network address based on OCTET_COUNT
+        my $cidr = $OCTET_COUNT * 8;    # 1->8, 2->16, 3->24, 4->32
+
+        # split the group (which contains the first N octets)
+        my @parts = split /\./, $group;
+
+        # pad remaining octets with zeros to make a full IPv4 address
+        while (@parts < 4) {
+            push @parts, 0;
+        }
+
+        my $network = join('.', @parts) . "/$cidr";
+
+        push @new_bans, $network;
     }
 }
 
