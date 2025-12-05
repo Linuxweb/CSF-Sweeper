@@ -7,6 +7,7 @@ A tool for ConfigServer Firewall that will ban any IP's permanently if they get 
 
 # Installation
 Download the csfsweeper file save it under /scripts. 
+Make sure the CHMOD permissions are set to ```700``` to ensure the script runs without errors.
 To add a cron job for this file to be executed, follow these commands:
 - Use the terminal and navigate to the server's files.
 - Use ```crontab -e``` to view and edit all your cron jobs.
