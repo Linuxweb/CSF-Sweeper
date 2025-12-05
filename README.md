@@ -4,10 +4,10 @@ A tool for ConfigServer Firewall that will ban any IP's permanently if they get 
 # Note
 - It is recommended to run this script daily, to ensure nothing can slip through the cracks.
 - If there are any changes or improvements you want to make, feel free to send a push request and we will check it out.
+- Make sure the CHMOD permissions are set to ```700``` to ensure the script runs without errors.
 
 # Installation
-Download the csfsweeper file save it under /scripts. 
-Make sure the CHMOD permissions are set to ```700``` to ensure the script runs without errors.
+Download the csfsweeper file save it under /scripts.
 To add a cron job for this file to be executed, follow these commands:
 - Use the terminal and navigate to the server's files.
 - Use ```crontab -e``` to view and edit all your cron jobs.
