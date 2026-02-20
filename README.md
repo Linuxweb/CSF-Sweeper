@@ -13,6 +13,9 @@ To add a cron job for this file to be executed, follow these commands:
 - Use ```crontab -e``` to view and edit all your cron jobs.
 - If you want to run this at 6:30 every day, this would be the cron job entry you need to add ```30 6 * * * /scripts/csfsweeper```
 
+You install csfsweepber by manually saving it under /scripts, or by using the following command to set up the file in the right location and set up the cron job.
+```curl -fsSL https://raw.githubusercontent.com/Linuxweb/CSF-Sweeper/main/csfsweeper -o /scripts/csfsweeper && chmod 700 /scripts/csfsweeper && (crontab -l 2>/dev/null; echo "30 6 * * * /scripts/csfsweeper") | crontab -```
+
 # Settings
 - **$test_mode**           = Use 1 for Live Mode and 0 for Test Mode. (Live uses your real csf.deny file, and test uses a test file)
 - **$dry_run_mode**        = Use 1 to simulate the actions (Sends a report as if they were executed) and 0 to perform the changes for real.
