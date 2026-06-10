@@ -31,3 +31,7 @@ You install csfsweepber by manually saving it under /scripts, or by using the fo
 # Using the deny.csf.test file
 - Make sure the **$CSF_DENY_TEST** reflects the directory of the file
 - This file is intended for use with an **$OCTET_COUNT** of 3, and a **$MIN_OCCURRENCES** of 3
+
+
+# !Disclaimer!
+Even though we have tested the safety of this software, using this plugin will be at your own risk and Linuxweb will not be held responsible in a case of lost data or any other damagae. This plugin bans IPs on an automated basis, and requires great care.
